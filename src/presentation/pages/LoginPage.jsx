@@ -16,7 +16,7 @@ export function LoginPage({ onLoginSuccess }) {
         </div>
 
         <div className="flex justify-center">
-          <div className="flex h-64 w-64 items-center justify-center rounded-2xl bg-white/40 text-6xl">
+          <div className="">
             🐕🐈
           </div>
         </div>
