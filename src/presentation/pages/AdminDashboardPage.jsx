@@ -1,5 +1,5 @@
 // src/presentation/pages/AdminDashboardPage.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { StatCard } from "../components/ui/StatCard";
 import { QuickAccessCard } from "../components/ui/QuickAccessCard";
@@ -7,44 +7,51 @@ import { CreateUserForm } from "../components/forms/CreateUserForm";
 import { VeterinariansSection } from "../components/sections/VeterinariansSection";
 import { ADMIN_NAV } from "../../shared/constants/navigation";
 import { ROLES } from "../../domain/entities/User";
-import { Veterinarian, VET_STATUS } from "../../domain/entities/Veterinarian";
-
-const MOCK_USERS = [
-  { id: 1, name: "Paula Rodríguez", subtitle: "rodriguezdiazmariapaula@gmail.com · CC 1013592860", role: ROLES.OWNER },
-  { id: 2, name: "Dr. Carlos Ramírez", subtitle: "c.ramirez@vet.com · RM 2045", role: ROLES.VET },
-];
-
-const MOCK_VETS = [
-  new Veterinarian({
-    id: 1,
-    name: "Dr. Carlos Ramírez",
-    specialty: "Medicina General",
-    clinic: "Clínica VetCare",
-    medicalLicense: "RM 2045",
-    scheduleStart: "8:00 a.m.",
-    scheduleEnd: "5:00 p.m.",
-    status: VET_STATUS.ACTIVE,
-  }),
-  new Veterinarian({
-    id: 2,
-    name: "Dra. Laura Torres",
-    specialty: "Cirugía",
-    clinic: "Animal Hospital",
-    medicalLicense: "RM 3310",
-    scheduleStart: "9:00 a.m.",
-    scheduleEnd: "6:00 p.m.",
-    status: VET_STATUS.ACTIVE,
-  }),
-];
+import { Veterinarian } from "../../domain/entities/Veterinarian";
+import { userRepository } from "../../infrastructure/repositories/userRepository";
+import { vetRepository } from "../../infrastructure/repositories/vetRepository";
 
 export function AdminDashboardPage({ onLogout }) {
   const [activeNav, setActiveNav] = useState("inicio");
-  const [users] = useState(MOCK_USERS);
-  const [vets, setVets] = useState(MOCK_VETS);
+  const [users, setUsers] = useState([]);
+  const [vets, setVets] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
-  function handleCreateVet(formData) {
-    const newVet = new Veterinarian({ id: Date.now(), ...formData, status: VET_STATUS.ACTIVE });
-    setVets((prev) => [newVet, ...prev]);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadData() {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [usersData, vetsData] = await Promise.all([userRepository.list(), vetRepository.list()]);
+        if (cancelled) return;
+        setUsers(usersData);
+        setVets(vetsData.map((v) => new Veterinarian(v)));
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleCreateVet(formData) {
+    const newVet = await vetRepository.create(formData);
+    setVets((prev) => [new Veterinarian(newVet), ...prev]);
+    // El backend genera una contraseña temporal porque el formulario no la pide.
+    if (newVet.temporaryPassword) {
+      window.alert(
+        `Veterinario creado. Contraseña temporal: ${newVet.temporaryPassword}\n` +
+          `Compártela con ${formData.name} para su primer inicio de sesión.`
+      );
+    }
   }
 
   function goTo(nav) {
@@ -74,6 +81,22 @@ export function AdminDashboardPage({ onLogout }) {
     }
   }
 
+  if (isLoading) {
+    return (
+      <DashboardLayout
+        subtitle="Panel de Administración"
+        roleLabel="Administrador"
+        roleIcon="🛡️"
+        navItems={ADMIN_NAV}
+        activeNav={activeNav}
+        onNavigate={setActiveNav}
+        onLogout={onLogout}
+      >
+        <p className="text-text-muted">Cargando datos...</p>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout
       subtitle="Panel de Administración"
@@ -84,6 +107,12 @@ export function AdminDashboardPage({ onLogout }) {
       onNavigate={setActiveNav}
       onLogout={onLogout}
     >
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          No se pudieron cargar los datos: {loadError}
+        </div>
+      )}
+
       {activeNav === "inicio" && (
         <>
           <div className="mb-6">

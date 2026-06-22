@@ -5,6 +5,7 @@ import { VetDashboardPage } from "./presentation/pages/VetDashboardPage";
 import { AdminDashboardPage } from "./presentation/pages/AdminDashboardPage";
 import { OwnerDashboardPage } from "./presentation/pages/OwnerDashboardPage";
 import { ROLES } from "./domain/entities/User";
+import { authRepository } from "./infrastructure/repositories/authRepository";
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -14,6 +15,7 @@ function App() {
   }
 
   function handleLogout() {
+    authRepository.logout();
     setCurrentUser(null);
   }
 

@@ -1,5 +1,5 @@
 // src/presentation/pages/OwnerDashboardPage.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { StatCard } from "../components/ui/StatCard";
 import { QuickAccessCard } from "../components/ui/QuickAccessCard";
@@ -7,57 +7,102 @@ import { PetsSection } from "../components/sections/PetsSection";
 import { AppointmentsSection } from "../components/sections/AppointmentsSection";
 import { MedicalHistorySection } from "../components/sections/MedicalHistorySection";
 import { OWNER_NAV } from "../../shared/constants/navigation";
-import { PET_STATUS } from "../../domain/entities/Pet";
-import { APPOINTMENT_STATUS } from "../../domain/entities/Appointment";
-import { RECORD_TYPES } from "../../domain/entities/MedicalRecord";
+import { Pet, PET_STATUS } from "../../domain/entities/Pet";
+import { petRepository } from "../../infrastructure/repositories/petRepository";
+import { vetRepository } from "../../infrastructure/repositories/vetRepository";
+import { appointmentRepository } from "../../infrastructure/repositories/appointmentRepository";
+import { medicalRecordRepository } from "../../infrastructure/repositories/medicalRecordRepository";
 
-const MOCK_VETS = [
-  { id: "v1", name: "Dr. Ramírez" },
-  { id: "v2", name: "Dra. Torres" },
-];
+// Convierte un registro tal como lo devuelve la API (description/treatment/weight)
+// al formato que espera <MedicalRecordItem> (title/doctor/detail).
+function toRecordViewModel(r) {
+  const detailParts = [];
+  if (r.weight) detailParts.push(`Peso: ${r.weight} kg`);
+  if (r.treatment) detailParts.push(`Tratamiento: ${r.treatment}`);
+  return {
+    id: r.id,
+    type: r.type,
+    title: r.description,
+    doctor: r.vetName,
+    date: r.date,
+    nextDate: r.nextDate,
+    detail: detailParts.join(" — ") || null,
+  };
+}
 
 export function OwnerDashboardPage({ onLogout }) {
   const [activeNav, setActiveNav] = useState("inicio");
 
-  const [pets, setPets] = useState([
-    { id: 1, name: "Max", species: "Perro", breed: "Labrador", age: "3 años", weight: 12, sex: "Macho", status: PET_STATUS.ACTIVE, summaryLine() { return `${this.breed} · ${this.age} · ${this.weight} kg · ${this.sex}`; } },
-    { id: 2, name: "Michi", species: "Gato", breed: "Persa", age: "1 año", weight: 4, sex: "Hembra", status: PET_STATUS.ACTIVE, summaryLine() { return `${this.breed} · ${this.age} · ${this.weight} kg · ${this.sex}`; } },
-  ]);
+  const [pets, setPets] = useState([]);
+  const [vets, setVets] = useState([]);
+  const [appointments, setAppointments] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
-  const [appointments, setAppointments] = useState([
-    { id: 1, petName: "Max", vetName: "Dr. Ramírez", type: "Consulta General", date: "20 May 2025", time: "10:00", status: APPOINTMENT_STATUS.CONFIRMED },
-  ]);
+  // Carga inicial: mascotas, veterinarios (para el selector) y citas.
+  useEffect(() => {
+    let cancelled = false;
 
-  const [records] = useState([
-    { id: 1, type: RECORD_TYPES.VACCINE, title: "Vacuna Antirrábica", doctor: "Dr. Ramírez", date: "10 Ene 2025", nextDate: "10 Ene 2026" },
-    { id: 2, type: RECORD_TYPES.DIAGNOSIS, title: "Diagnóstico: Otitis leve", doctor: "Dra. Torres", date: "5 Mar 2025", detail: "Tratamiento: Gotas otológicas x 7 días" },
-    { id: 3, type: RECORD_TYPES.VACCINE, title: "Vacuna Polivalente (DHPPI)", doctor: "Dr. Ramírez", date: "20 Mar 2025", nextDate: "20 Mar 2026" },
-    { id: 4, type: RECORD_TYPES.CHECKUP, title: "Control general", doctor: "Dr. Medina", date: "1 Abr 2025", detail: "Peso: 12.3 kg — Sin novedades" },
-  ]);
+    async function loadData() {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [petsData, vetsData, appointmentsData] = await Promise.all([
+          petRepository.list(),
+          vetRepository.list(),
+          appointmentRepository.list(),
+        ]);
+        if (cancelled) return;
+        setPets(petsData.map((p) => new Pet(p)));
+        setVets(vetsData);
+        setAppointments(appointmentsData);
+      } catch (err) {
+        if (!cancelled) setLoadError(err.message);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
 
-  function handleCreatePet(petData) {
-    const newPet = {
-      id: Date.now(),
-      ...petData,
-      status: PET_STATUS.ACTIVE,
-      summaryLine() { return `${this.breed} · ${this.age} · ${this.weight ? this.weight + " kg" : ""} · ${this.sex}`.replace(/\s·\s$/, ""); },
+    loadData();
+    return () => {
+      cancelled = true;
     };
-    setPets((prev) => [...prev, newPet]);
+  }, []);
+
+  // El historial médico se consulta por mascota; mostramos el de la primera
+  // mascota registrada, igual que hacía la versión con datos de ejemplo.
+  useEffect(() => {
+    if (!pets[0]?.id) return;
+    let cancelled = false;
+
+    medicalRecordRepository
+      .list(pets[0].id)
+      .then((data) => {
+        if (!cancelled) setRecords(data.map(toRecordViewModel));
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pets]);
+
+  async function handleCreatePet(petData) {
+    const created = await petRepository.create(petData);
+    setPets((prev) => [...prev, new Pet(created)]);
   }
 
-  function handleConfirmAppointment(formData) {
+  async function handleConfirmAppointment(formData) {
+    const created = await appointmentRepository.create(formData);
     const pet = pets.find((p) => String(p.id) === String(formData.petId));
-    const vet = MOCK_VETS.find((v) => v.id === formData.vetId);
-    const newAppointment = {
-      id: Date.now(),
-      petName: pet?.name || "Mascota",
-      vetName: vet?.name || "Por asignar",
-      type: formData.type || "Consulta General",
-      date: formData.date,
-      time: formData.time,
-      status: APPOINTMENT_STATUS.PENDING,
-    };
-    setAppointments((prev) => [newAppointment, ...prev]);
+    const vet = vets.find((v) => String(v.id) === String(formData.vetId));
+    setAppointments((prev) => [
+      { ...created, petName: pet?.name || "Mascota", vetName: vet?.name || "Por asignar" },
+      ...prev,
+    ]);
   }
 
   function renderSection() {
@@ -68,9 +113,9 @@ export function OwnerDashboardPage({ onLogout }) {
         return (
           <AppointmentsSection
             pets={pets}
-            vets={MOCK_VETS}
+            vets={vets}
             appointments={appointments}
-            takenSlots={["09:00", "11:00", "16:00", "09:30"]}
+            takenSlots={appointments.map((a) => a.time)}
             onConfirm={handleConfirmAppointment}
           />
         );
@@ -91,6 +136,22 @@ export function OwnerDashboardPage({ onLogout }) {
     }
   }
 
+  if (isLoading) {
+    return (
+      <DashboardLayout
+        subtitle="Gestión de Mascotas"
+        roleLabel="Dueño"
+        roleIcon="🐶"
+        navItems={OWNER_NAV}
+        activeNav={activeNav}
+        onNavigate={setActiveNav}
+        onLogout={onLogout}
+      >
+        <p className="text-text-muted">Cargando datos...</p>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout
       subtitle="Gestión de Mascotas"
@@ -101,6 +162,12 @@ export function OwnerDashboardPage({ onLogout }) {
       onNavigate={setActiveNav}
       onLogout={onLogout}
     >
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          No se pudieron cargar los datos: {loadError}
+        </div>
+      )}
+
       {activeNav === "inicio" && (
         <div className="mb-6 flex items-center justify-between">
           <div>

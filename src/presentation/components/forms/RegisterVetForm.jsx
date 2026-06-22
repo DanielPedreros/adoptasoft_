@@ -7,6 +7,7 @@ import { Button } from "../ui/Button";
 
 const initialForm = {
   name: "",
+  email: "",
   specialty: SPECIALTY_OPTIONS[0],
   clinic: "",
   medicalLicense: "",
@@ -46,6 +47,15 @@ export function RegisterVetForm({ onCreate }) {
           value={formData.name}
           onChange={(e) => setField("name", e.target.value)}
           error={errors.name}
+        />
+
+        <TextField
+          label="EMAIL"
+          type="email"
+          placeholder="dr.nombre@clinica.com"
+          value={formData.email}
+          onChange={(e) => setField("email", e.target.value)}
+          error={errors.email}
         />
 
         <div className="flex flex-col gap-2">

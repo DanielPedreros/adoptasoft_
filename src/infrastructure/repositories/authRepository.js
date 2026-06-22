@@ -28,21 +28,22 @@ export const authRepository = {
       return mockLogin({ email, role });
     }
 
-    const data = await httpClient.post("/auth/login", { email, password, role });
+    const data = await httpClient.post("/auth/login.php", { email, password, role });
     localStorage.setItem("adoptasoft_token", data.token);
     return new User(data.user);
   },
 
   async loginWithGoogle(googleToken, role) {
-    if (USE_MOCK) {
-      return mockLogin({ email: "google-user@adoptasoft.com", role });
-    }
-    const data = await httpClient.post("/auth/google", { token: googleToken, role });
-    localStorage.setItem("adoptasoft_token", data.token);
-    return new User(data.user);
+    // Nota: la API en PHP todavía no implementa /auth/google.php (login con
+    // Google requiere validar el token contra los servidores de Google).
+    // Por ahora este botón sigue en modo mock aunque haya backend conectado.
+    return mockLogin({ email: "google-user@adoptasoft.com", role });
   },
 
-  logout() {
+  async logout() {
+    if (!USE_MOCK) {
+      await httpClient.post("/auth/logout.php").catch(() => {});
+    }
     localStorage.removeItem("adoptasoft_token");
   },
 };
