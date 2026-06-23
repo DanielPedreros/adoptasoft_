@@ -12,6 +12,7 @@ import { petRepository } from "../../infrastructure/repositories/petRepository";
 import { vetRepository } from "../../infrastructure/repositories/vetRepository";
 import { appointmentRepository } from "../../infrastructure/repositories/appointmentRepository";
 import { medicalRecordRepository } from "../../infrastructure/repositories/medicalRecordRepository";
+import { exportToPdf, exportToWord } from "../../shared/utils/exportHistory";
 
 // Convierte un registro tal como lo devuelve la API (description/treatment/weight)
 // al formato que espera <MedicalRecordItem> (title/doctor/detail).
@@ -120,7 +121,22 @@ export function OwnerDashboardPage({ onLogout }) {
           />
         );
       case "historial":
-        return <MedicalHistorySection petName={`${pets[0]?.name || ""} — ${pets[0]?.breed || ""}`} records={records} />;
+        return (
+          <MedicalHistorySection
+            petName={`${pets[0]?.name || ""} — ${pets[0]?.breed || ""}`}
+            records={records}
+            onExportPdf={() => exportToPdf(`${pets[0]?.name || "mascota"} — ${pets[0]?.breed || ""}`, records)}
+            onExportWord={() => exportToWord(`${pets[0]?.name || "mascota"} — ${pets[0]?.breed || ""}`, records)}
+            onShare={() => {
+              if (navigator.share) {
+                navigator.share({ title: `Historial de ${pets[0]?.name}`, text: "Historial médico generado desde Adoptasoft." });
+              } else {
+                navigator.clipboard.writeText(window.location.href);
+                alert("Enlace copiado al portapapeles.");
+              }
+            }}
+          />
+        );
       default:
         return (
           <>
